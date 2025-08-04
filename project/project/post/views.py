@@ -4,9 +4,12 @@ from django.shortcuts import render
 from rest_framework.response import Response
 from rest_framework.decorators import api_view, action
 from rest_framework import viewsets, mixins
+from rest_framework.permissions import IsAuthenticated, IsAdminUser
+from rest_framework.exceptions import PermissionDenied
 
 from .models import *
 from .serializers import *
+from .permissions import IsOwnerOrReadOnly
 
 import re
 
@@ -35,6 +38,12 @@ class PostViewSet(viewsets.ModelViewSet):
     if (self.action == "list" or self.action == "top3_liked") :
       return PostListSerializer
     return PostSerializer
+
+  # admin user만 포스트 수정, 삭제가 가능하도록
+  def get_permissions(self): #액션별로 동적 권한 설정
+    if self.action in ["update", "destroy", "partial_update"]:
+      return [IsAdminUser()]
+    return []
 
   def create(self, request): #db에 저장할 때 반드시 필요한 필드는 perform_create말고 create
     serializer = self.get_serializer(data=request.data) #요청데이터를 기반으로 시리얼라이저 생성
@@ -82,11 +91,18 @@ class PostViewSet(viewsets.ModelViewSet):
 class CommentViewSet(viewsets.GenericViewSet, mixins.RetrieveModelMixin, mixins.UpdateModelMixin, mixins.DestroyModelMixin):
   queryset = Comment.objects.all()
   serializer_class = CommentSerializer
+
+  # 로그인한 해당 댓글 작성자만 수정/삭제 가능
+  def get_permissions(self):
+    if self.action in ["update", "destroy", "partial_update"]:
+      return [IsOwnerOrReadOnly()]
+    return []
   
 # 게시물의 댓글 목록 조회, 게시물에 댓글 작성
 class PostCommentViewSet(viewsets.GenericViewSet, mixins.ListModelMixin, mixins.CreateModelMixin):
   # queryset = Comment.objects.all()
   serializer_class = CommentSerializer #모든 액션에 대해 동일한 시리얼라이저 적용
+  permission_classes = [IsAuthenticated]
 
   # def list(self, request, post_id = None):
   #   post = get_object_or_404(Post, id=post_id) #Post 모델에서 id에 해당하는 객체를 불러옴
